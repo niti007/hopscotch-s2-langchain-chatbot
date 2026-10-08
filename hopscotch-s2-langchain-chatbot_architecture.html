@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hopscotch LangChain Chatbot (Session 2) — Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --bg2:       #181c27;
+    --bg3:       #1e2332;
+    --border:    rgba(255,255,255,0.08);
+    --border2:   rgba(255,255,255,0.14);
+    --text:      #e2e4ed;
+    --muted:     #7c8099;
+    --purple:    #8b7cf8;
+    --purple-bg: rgba(139,124,248,0.12);
+    --amber:     #f0a940;
+    --amber-bg:  rgba(240,169,64,0.12);
+    --teal:      #34c9a0;
+    --teal-bg:   rgba(52,201,160,0.12);
+    --coral:     #f07060;
+    --coral-bg:  rgba(240,112,96,0.12);
+    --gray:      #9ca0b0;
+    --gray-bg:   rgba(156,160,176,0.12);
+    --mono:      'JetBrains Mono', 'Fira Mono', monospace;
+    --sans:      'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px 60px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  header p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 3px;
+  }
+
+  .diagram-wrap {
+    width: 100%;
+    max-width: 780px;
+  }
+
+  svg text { font-family: var(--sans); }
+
+  /* Node styles */
+  .node-purple rect { fill: var(--purple-bg); stroke: var(--purple); stroke-width: 1; }
+  .node-purple .label { fill: var(--purple); font-size: 13px; font-weight: 600; }
+  .node-purple .sublabel { fill: #a89ef8; font-size: 11px; }
+
+  .node-amber rect { fill: var(--amber-bg); stroke: var(--amber); stroke-width: 1; }
+  .node-amber .label { fill: var(--amber); font-size: 13px; font-weight: 600; }
+  .node-amber .sublabel { fill: #c9974a; font-size: 11px; }
+
+  .node-teal rect { fill: var(--teal-bg); stroke: var(--teal); stroke-width: 1; }
+  .node-teal .label { fill: var(--teal); font-size: 13px; font-weight: 600; }
+  .node-teal .sublabel { fill: #5ec9ad; font-size: 11px; }
+
+  .node-coral rect { fill: var(--coral-bg); stroke: var(--coral); stroke-width: 1; }
+  .node-coral .label { fill: var(--coral); font-size: 13px; font-weight: 600; }
+  .node-coral .sublabel { fill: #d4806f; font-size: 11px; }
+
+  .node-gray rect { fill: var(--gray-bg); stroke: var(--gray); stroke-width: 1; }
+  .node-gray .label { fill: var(--gray); font-size: 13px; font-weight: 600; }
+
+  .pydantic-badge rect { fill: rgba(255,255,255,0.04); stroke: rgba(255,255,255,0.12); stroke-width: 0.75; stroke-dasharray: 3 2; }
+  .pydantic-badge .key { fill: #7c8099; font-size: 10px; font-weight: 500; }
+  .pydantic-badge .val { font-size: 10px; font-weight: 600; }
+  .pydantic-badge .val-purple { fill: #a89ef8; }
+  .pydantic-badge .val-amber  { fill: #d4ac6a; }
+
+  .arr { stroke: rgba(255,255,255,0.22); stroke-width: 1; fill: none; }
+  .arr-label { fill: #5a5f78; font-size: 10px; }
+  .leader { stroke: rgba(255,255,255,0.12); stroke-width: 0.75; stroke-dasharray: 3 2; fill: none; }
+
+  .persist-bar rect { fill: rgba(156,160,176,0.07); stroke: rgba(156,160,176,0.2); stroke-width: 0.75; }
+  .persist-bar text { fill: var(--muted); font-size: 10.5px; }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text);
+    max-width: 260px;
+    line-height: 1.5;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 99;
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-title { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+  .tooltip .tt-code { font-family: var(--mono); font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,0.04); padding: 2px 5px; border-radius: 4px; display: inline-block; margin-top: 3px; }
+
+  .clickable { cursor: pointer; }
+  .clickable rect { transition: filter 0.15s; }
+  .clickable:hover rect { filter: brightness(1.25); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Hopscotch Support Chatbot — LangChain (Session 2)</h1>
+  <p>Architecture diagram · hover nodes for detail · ChatOpenAI via OpenRouter + Streamlit</p>
+</header>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#8b7cf8"></div>LLM call (via get_llm)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0a940"></div>UI trigger</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34c9a0"></div>Prompt / history / output</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.2)"></div>Config / file badge</div>
+</div>
+
+<div class="diagram-wrap">
+<svg width="100%" viewBox="0 0 780 900" role="img">
+  <title>Hopscotch LangChain Chatbot Architecture</title>
+  <desc>Streamlit app, shared get_llm model factory and prompt templates, then two paths: a history-aware support chat chain and a four-step ticket triage chain.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <g class="node-gray"><rect x="300" y="16" width="180" height="34" rx="17"/><text class="label" x="390" y="37" text-anchor="middle">START</text></g>
+  <line x1="390" y1="50" x2="390" y2="80" class="arr" marker-end="url(#arr)"/>
+  <g class="node-amber clickable" id="n-app" data-tt="app">
+    <rect x="200" y="80" width="380" height="58" rx="8"/>
+    <text class="label" x="390" y="101" text-anchor="middle">app.py — Streamlit UI</text>
+    <text class="sublabel" x="390" y="118" text-anchor="middle">3 tabs + sidebar · model picker · session_id</text>
+  </g>
+  <g class="pydantic-badge">
+    <rect x="595" y="82" width="170" height="52" rx="6"/>
+    <text class="key" x="605" y="96">Streamlit tabs</text>
+    <text class="val val-purple" x="605" y="110" style="font-family:monospace;font-size:10.5px">st.tabs([...])</text>
+    <text class="key" x="605" y="124">Chat · Prompt Templates · Triage</text>
+  </g>
+  <line x1="580" y1="107" x2="595" y2="107" class="leader"/>
+  <line x1="390" y1="138" x2="390" y2="168" class="arr" marker-end="url(#arr)"/>
+  <g class="node-purple clickable" id="n-llm" data-tt="llm">
+    <rect x="200" y="168" width="380" height="70" rx="8"/>
+    <text class="label" x="390" y="189" text-anchor="middle">llm.py — get_llm(model)</text>
+    <text class="sublabel" x="390" y="206" text-anchor="middle">ChatOpenAI(base_url=OpenRouter, temperature=0.3)</text>
+    <text class="sublabel" x="390" y="221" text-anchor="middle">the only provider-aware file</text>
+  </g>
+  <g class="pydantic-badge clickable" id="n-models" data-tt="models">
+    <rect x="595" y="170" width="170" height="64" rx="6"/>
+    <text class="key" x="605" y="184">AVAILABLE_MODELS</text>
+    <text class="val val-purple" x="605" y="198" style="font-family:monospace;font-size:10.5px">4 models</text>
+    <text class="key" x="605" y="212">GPT-4o mini · Haiku 4.5</text>
+    <text class="key" x="605" y="226">Gemini 2.5 Flash Lite · Llama 3.3</text>
+  </g>
+  <line x1="580" y1="203" x2="595" y2="203" class="leader"/>
+  <line x1="390" y1="238" x2="390" y2="268" class="arr" marker-end="url(#arr)"/>
+  <g class="node-teal clickable" id="n-prompts" data-tt="prompts">
+    <rect x="200" y="268" width="380" height="58" rx="8"/>
+    <text class="label" x="390" y="289" text-anchor="middle">prompts.py — ChatPromptTemplates</text>
+    <text class="sublabel" x="390" y="306" text-anchor="middle">5 prompts · POLICY loaded from hopscotch_policy.md</text>
+  </g>
+  <g class="pydantic-badge clickable" id="n-policy" data-tt="policy">
+    <rect x="595" y="270" width="170" height="52" rx="6"/>
+    <text class="key" x="605" y="284">hopscotch_policy.md</text>
+    <text class="val val-purple" x="605" y="298" style="font-family:monospace;font-size:10.5px">.partial(policy=POLICY)</text>
+    <text class="key" x="605" y="312">30d returns · 90d defects</text>
+  </g>
+  <line x1="580" y1="297" x2="595" y2="297" class="leader"/>
+  <path d="M300 326 L300 346 L230 346 L230 376" class="arr" fill="none" marker-end="url(#arr)"/>
+  <path d="M480 326 L480 346 L550 346 L550 376" class="arr" fill="none" marker-end="url(#arr)"/>
+  <text class="arr-label" x="218" y="366" text-anchor="end">Chat tab</text>
+  <text class="arr-label" x="562" y="366">Triage tab</text>
+  <g class="node-teal clickable" id="n-hist" data-tt="hist">
+    <rect x="100" y="376" width="260" height="58" rx="8"/>
+    <text class="label" x="230" y="397" text-anchor="middle">get_session_history(sid)</text>
+    <text class="sublabel" x="230" y="414" text-anchor="middle">InMemoryChatMessageHistory per id</text>
+  </g>
+  <g class="node-teal clickable" id="n-fill" data-tt="fill">
+    <rect x="100" y="464" width="260" height="58" rx="8"/>
+    <text class="label" x="230" y="485" text-anchor="middle">Fill SUPPORT_PROMPT</text>
+    <text class="sublabel" x="230" y="502" text-anchor="middle">system+policy · chat_history · {input}</text>
+  </g>
+  <g class="node-purple clickable" id="n-chain" data-tt="chain">
+    <rect x="100" y="552" width="260" height="58" rx="8"/>
+    <text class="label" x="230" y="573" text-anchor="middle">prompt | llm | parser</text>
+    <text class="sublabel" x="230" y="590" text-anchor="middle">StrOutputParser → plain string reply</text>
+  </g>
+  <g class="node-teal clickable" id="n-save" data-tt="save">
+    <rect x="100" y="640" width="260" height="58" rx="8"/>
+    <text class="label" x="230" y="661" text-anchor="middle">Save turn to history</text>
+    <text class="sublabel" x="230" y="678" text-anchor="middle">Human + AI messages appended</text>
+  </g>
+  <g class="node-purple clickable" id="n-t1" data-tt="t1">
+    <rect x="420" y="376" width="260" height="58" rx="8"/>
+    <text class="label" x="550" y="397" text-anchor="middle">1 · Classify</text>
+    <text class="sublabel" x="550" y="414" text-anchor="middle">category label (3 classes)</text>
+  </g>
+  <g class="node-purple clickable" id="n-t2" data-tt="t2">
+    <rect x="420" y="464" width="260" height="58" rx="8"/>
+    <text class="label" x="550" y="485" text-anchor="middle">2 · Extract details</text>
+    <text class="sublabel" x="550" y="502" text-anchor="middle">JSON string: order, value, days</text>
+  </g>
+  <g class="node-purple clickable" id="n-t3" data-tt="t3">
+    <rect x="420" y="552" width="260" height="58" rx="8"/>
+    <text class="label" x="550" y="573" text-anchor="middle">3 · Priority</text>
+    <text class="sublabel" x="550" y="590" text-anchor="middle">High / Medium / Low (uses 1 + 2)</text>
+  </g>
+  <g class="node-purple clickable" id="n-t4" data-tt="t4">
+    <rect x="420" y="640" width="260" height="58" rx="8"/>
+    <text class="label" x="550" y="661" text-anchor="middle">4 · Draft reply</text>
+    <text class="sublabel" x="550" y="678" text-anchor="middle">3-4 sentences, policy-grounded</text>
+  </g>
+  <line x1="230" y1="434" x2="230" y2="464" class="arr" marker-end="url(#arr)"/>
+  <line x1="550" y1="434" x2="550" y2="464" class="arr" marker-end="url(#arr)"/>
+  <line x1="230" y1="522" x2="230" y2="552" class="arr" marker-end="url(#arr)"/>
+  <line x1="550" y1="522" x2="550" y2="552" class="arr" marker-end="url(#arr)"/>
+  <line x1="230" y1="610" x2="230" y2="640" class="arr" marker-end="url(#arr)"/>
+  <line x1="550" y1="610" x2="550" y2="640" class="arr" marker-end="url(#arr)"/>
+  <line x1="230" y1="698" x2="230" y2="760" class="arr" marker-end="url(#arr)"/>
+  <line x1="550" y1="698" x2="550" y2="760" class="arr" marker-end="url(#arr)"/>
+  <path d="M230 760 L390 788" class="arr" fill="none" marker-end="url(#arr)"/>
+  <path d="M550 760 L390 788" class="arr" fill="none" marker-end="url(#arr)"/>
+  <g class="node-gray"><rect x="300" y="788" width="180" height="34" rx="17"/><text class="label" x="390" y="809" text-anchor="middle">END · shown in UI</text></g>
+  <g class="persist-bar">
+    <rect x="30" y="850" width="720" height="30" rx="6"/>
+    <text x="390" y="869" text-anchor="middle">💾  History lives in an in-memory dict (chains.store) — lost on restart · triage is imperative Python → Session 3 rewrites with LCEL</text>
+  </g>
+  <g class="pydantic-badge">
+    <rect x="14" y="80" width="170" height="144" rx="6"/>
+    <text class="key" x="24" y="94">Config &amp; deps</text>
+    <text class="val val-purple" x="24" y="108" style="font-family:monospace;font-size:10.5px">OPENROUTER_API_KEY</text>
+    <text class="key" x="24" y="122">read from .env (dotenv)</text>
+    <text class="key" x="24" y="136">streamlit &gt;= 1.65</text>
+    <text class="key" x="24" y="150">langchain &gt;= 1.4.3</text>
+    <text class="key" x="24" y="164">langchain-openai</text>
+    <text class="key" x="24" y="178">python-dotenv</text>
+    <text class="key" x="24" y="192">Python 3.10+</text>
+  </g>
+  <line x1="184" y1="203" x2="200" y2="203" class="leader"/>
+</svg>
+</div>
+
+<div class="tooltip" id="tooltip">
+  <div class="tt-title" id="tt-title"></div>
+  <div id="tt-body"></div>
+</div>
+
+<script>
+const c = s => '<span class="tt-code">' + s + '</span>';
+const tips = {
+  app: { title: 'app.py — Streamlit UI', body: 'Three tabs (Chat, Prompt Templates, Ticket triage) plus a sidebar with the model picker and ' + c('session_id') + ' controls. Calls ' + c('get_llm(model)') + ' on every rerun and stops with an error if ' + c('OPENROUTER_API_KEY') + ' is missing.' },
+  llm: { title: 'llm.py — get_llm()', body: 'Returns a LangChain ' + c('ChatOpenAI') + ' pointed at ' + c('https://openrouter.ai/api/v1') + '. OpenRouter speaks the OpenAI wire format, so changing the model string is the whole switch. Default ' + c('openai/gpt-4o-mini') + ', temperature 0.3.' },
+  models: { title: 'AVAILABLE_MODELS', body: 'Display name → OpenRouter id: GPT-4o mini, ' + c('anthropic/claude-haiku-4.5') + ', ' + c('google/gemini-2.5-flash-lite') + ', ' + c('meta-llama/llama-3.3-70b-instruct') + '. Commented code in llm.py shows direct ChatAnthropic / ChatGoogleGenerativeAI swaps.' },
+  prompts: { title: 'prompts.py', body: 'All prompts are module-level ' + c('ChatPromptTemplate') + ' objects: SUPPORT_PROMPT, CLASSIFICATION_PROMPT, EXTRACTION_PROMPT, PRIORITY_PROMPT, RESPONSE_PROMPT. PROMPT_CATALOG feeds the Prompt Templates tab.' },
+  policy: { title: 'hopscotch_policy.md', body: 'Loaded once into ' + c('POLICY') + ' and pre-filled with ' + c('.partial(policy=POLICY)') + ' on SUPPORT_PROMPT and RESPONSE_PROMPT. Section 4 cases (child safety, allergy, order over INR 5,000, unclear facts) must go to a human — enforced only by prompt instructions, not by a branch.' },
+  hist: { title: 'get_session_history', body: 'Looks up or creates an ' + c('InMemoryChatMessageHistory') + ' in the module-level ' + c('store') + ' dict keyed by session_id. app.py exposes the same dict via ' + c('@st.cache_resource') + ' so it survives Streamlit reruns.' },
+  fill: { title: 'SUPPORT_PROMPT', body: 'System rules + policy, a ' + c('MessagesPlaceholder("chat_history")') + ' slot for past turns, then ' + c('("human", "{input}")') + '. app.py also invokes the template directly to show the "Prompt sent this turn" expander; the real call goes through the history wrapper.' },
+  chain: { title: 'build_chatbot(llm)', body: c('SUPPORT_PROMPT | llm | StrOutputParser()') + ' wrapped in ' + c('RunnableWithMessageHistory') + ' with ' + c('input_messages_key="input"') + ' and ' + c('history_messages_key="chat_history"') + '. Invoked with ' + c('config={"configurable": {"session_id": sid}}') + '.' },
+  save: { title: 'History write-back', body: 'The wrapper appends the HumanMessage and the AIMessage to the session history automatically. app.py records which model answered each reply in ' + c('st.session_state.answered_by') + '.' },
+  t1: { title: 'Triage step 1 — classify', body: c('CLASSIFICATION_PROMPT | llm | parser') + ' returns one label: ' + c('policy_violation') + ', ' + c('genuine_defect') + ' or ' + c('other') + '. Four SAMPLE_TICKETS in chains.py exercise it.' },
+  t2: { title: 'Triage step 2 — extract', body: c('EXTRACTION_PROMPT') + ' asks for compact JSON: customer_name, order_id, product, issue, days_since_delivery, order_value_inr (null when missing). The result stays a plain string, not a parsed object.' },
+  t3: { title: 'Triage step 3 — priority', body: c('PRIORITY_PROMPT') + ' takes category + details. High = child safety, allergy, or a genuine defect over INR 5,000; Low = policy violation with no safety concern.' },
+  t4: { title: 'Triage step 4 — draft reply', body: c('RESPONSE_PROMPT') + ' gets category, details, original text and the policy. Steps 3 and 4 both depend on steps 1 and 2 but run one after another — no parallelism yet (that is the Session 3 teaser).' }
+};
+
+const tt = document.getElementById('tooltip');
+const ttTitle = document.getElementById('tt-title');
+const ttBody = document.getElementById('tt-body');
+
+document.querySelectorAll('[data-tt]').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    const key = el.dataset.tt;
+    if (!tips[key]) return;
+    ttTitle.textContent = tips[key].title;
+    ttBody.innerHTML = tips[key].body;
+    tt.classList.add('show');
+  });
+  el.addEventListener('mousemove', e => {
+    tt.style.left = (e.clientX + 14) + 'px';
+    tt.style.top  = (e.clientY + 14) + 'px';
+  });
+  el.addEventListener('mouseleave', () => tt.classList.remove('show'));
+});
+</script>
+</body>
+</html>
